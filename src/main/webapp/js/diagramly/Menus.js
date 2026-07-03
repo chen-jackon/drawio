@@ -4291,13 +4291,348 @@
 			editorUi.showImportCsvDialog();
 		})).isEnabled = isGraphEnabled;
 
+		var parseCodeStructs = function(text)
+		{
+			var result = [];
+			var source = (text != null) ? text.replace(/\r\n?/g, '\n') : '';
+
+			var toSingleLine = function(value)
+			{
+				return mxUtils.trim((value || '').replace(/\s+/g, ' '));
+			};
+
+			var isMacroLine = function(line)
+			{
+				return line.charAt(0) == '#' ||
+					/^[A-Z_][A-Z0-9_]*\s*\(/.test(line);
+			};
+
+			var addCodeRow = function(rows, line)
+			{
+				line = mxUtils.trim(line);
+
+				if (line.length == 0 || line == '{' || line == '}' ||
+					/^(public|private|protected):$/.test(line))
+				{
+					return;
+				}
+
+				rows.push({
+					text: line.replace(/[,;]$/, ''),
+					type: isMacroLine(line) ? 'macro' : 'member'
+				});
+			};
+
+			var addCodeWithCommentRow = function(rows, line, comment)
+			{
+				line = mxUtils.trim(line);
+				comment = toSingleLine(comment);
+
+				if (line.length == 0)
+				{
+					rows.push({text: comment, type: 'comment'});
+				}
+				else
+				{
+					var text = line.replace(/[,;]$/, '') + ' ' + comment;
+
+					rows.push({
+						text: text,
+						html: mxUtils.htmlEntities(line.replace(/[,;]$/, ''), false) +
+							' <font color="#008a00">' + mxUtils.htmlEntities(comment, false) + '</font>',
+						type: isMacroLine(line) ? 'macro' : 'member'
+					});
+				}
+			};
+
+			var parseStructRows = function(body)
+			{
+				var rows = [];
+				var code = '';
+				var pending = '';
+
+				var flushCode = function(force)
+				{
+					var line = mxUtils.trim(code);
+					code = '';
+
+					if (line.length == 0)
+					{
+						return;
+					}
+
+					if (isMacroLine(line))
+					{
+						if (pending.length > 0)
+						{
+							addCodeRow(rows, pending);
+							pending = '';
+						}
+
+						addCodeRow(rows, line);
+					}
+					else if (pending.length > 0)
+					{
+						pending += ' ' + line;
+
+						if (force || /;\s*$/.test(line))
+						{
+							addCodeRow(rows, pending);
+							pending = '';
+						}
+					}
+					else if (/;\s*$/.test(line))
+					{
+						addCodeRow(rows, line);
+					}
+					else if (line.charAt(line.length - 1) == ',' ||
+						(line.indexOf('(') >= 0 && line.indexOf(')') < 0))
+					{
+						pending = line;
+					}
+					else
+					{
+						addCodeRow(rows, line);
+					}
+				};
+
+				for (var i = 0; i < body.length;)
+				{
+					if (body.substring(i, i + 2) == '/*')
+					{
+						var end = body.indexOf('*/', i + 2);
+						end = (end >= 0) ? end + 2 : body.length;
+						var comment = body.substring(i, end);
+						var beforeComment = mxUtils.trim(code);
+						code = '';
+
+						if (beforeComment.length > 0)
+						{
+							if (pending.length > 0)
+							{
+								beforeComment = pending + ' ' + beforeComment;
+								pending = '';
+							}
+
+							addCodeWithCommentRow(rows, beforeComment, comment);
+						}
+						else
+						{
+							flushCode(true);
+							rows.push({text: toSingleLine(comment), type: 'comment'});
+						}
+
+						i = end;
+					}
+					else if (body.substring(i, i + 2) == '//')
+					{
+						var lineEnd = body.indexOf('\n', i + 2);
+						lineEnd = (lineEnd >= 0) ? lineEnd : body.length;
+						var lineComment = body.substring(i, lineEnd);
+						var beforeLineComment = mxUtils.trim(code);
+						code = '';
+
+						if (beforeLineComment.length > 0)
+						{
+							if (pending.length > 0)
+							{
+								beforeLineComment = pending + ' ' + beforeLineComment;
+								pending = '';
+							}
+
+							addCodeWithCommentRow(rows, beforeLineComment, lineComment);
+						}
+						else
+						{
+							flushCode(true);
+							rows.push({text: toSingleLine(lineComment), type: 'comment'});
+						}
+
+						i = lineEnd;
+					}
+					else if (body.charAt(i) == '\n')
+					{
+						flushCode(false);
+						i++;
+					}
+					else
+					{
+						code += body.charAt(i);
+						i++;
+					}
+				}
+
+				flushCode(true);
+
+				if (pending.length > 0)
+				{
+					addCodeRow(rows, pending);
+				}
+
+				return rows;
+			};
+
+			var addStruct = function(name, body, index)
+			{
+				name = mxUtils.trim(name || '');
+				body = body || '';
+
+				if (name.length == 0 || body.length == 0)
+				{
+					return;
+				}
+
+				var rows = parseStructRows(body);
+
+				if (rows.length > 0)
+				{
+					result.push({name: name, rows: rows, index: index || 0});
+				}
+			};
+
+			var goStructPattern = /(?:^|\n)\s*type\s+([A-Za-z_$][\w$]*)\s+struct\s*\{([\s\S]*?)\n\s*\}/g;
+			var match = null;
+
+			while ((match = goStructPattern.exec(source)) != null)
+			{
+				addStruct(match[1], match[2], match.index);
+			}
+
+			var namedBlockPattern = /(?:^|\n)\s*(?:typedef\s+)?(?:struct|class|interface|record)\s+([A-Za-z_$][\w$]*)?[^{;]*\{([\s\S]*?)\}\s*([A-Za-z_$][\w$]*)?/g;
+
+			while ((match = namedBlockPattern.exec(source)) != null)
+			{
+				addStruct(match[1] || match[3], match[2], match.index);
+			}
+
+			var typeLiteralPattern = /(?:^|\n)\s*type\s+([A-Za-z_$][\w$]*)\s*=\s*\{([\s\S]*?)\n\s*\}/g;
+
+			while ((match = typeLiteralPattern.exec(source)) != null)
+			{
+				addStruct(match[1], match[2], match.index);
+			}
+
+			return result.sort(function(a, b)
+			{
+				return a.index - b.index;
+			});
+		};
+
+		editorUi.actions.put('fromCodeStruct', new Action(mxResources.get('fromCodeStruct', null, 'From Code Struct') + '...', function(evt)
+		{
+			var sample = 'typedef struct Person {\n' +
+				'    int id;\n' +
+				'    char name[64];\n' +
+				'    bool active;\n' +
+				'} Person;';
+			var dlg = new SimpleTextareaDialog(editorUi, sample, function(text)
+			{
+				var structs = parseCodeStructs(text);
+
+				if (structs.length == 0)
+				{
+					editorUi.alert(mxResources.get('noCodeStructFound', null, 'No supported struct, class or interface found.'));
+					return;
+				}
+
+				var cells = [];
+				var x = null;
+				var y = null;
+
+				graph.getModel().beginUpdate();
+				try
+				{
+					for (var i = 0; i < structs.length; i++)
+					{
+						var item = structs[i];
+						var maxLen = item.name.length;
+
+						for (var j = 0; j < item.rows.length; j++)
+						{
+							maxLen = Math.max(maxLen, item.rows[j].text.length);
+						}
+
+						var width = Math.min(480, Math.max(220, maxLen * 7 + 36));
+						var rowHeight = 28;
+						var startSize = 34;
+						var values = [];
+
+						for (var k = 0; k < item.rows.length; k++)
+						{
+							values.push([(item.rows[k].html != null) ?
+								item.rows[k].html : mxUtils.htmlEntities(item.rows[k].text, false)]);
+						}
+
+						var table = graph.createTable(item.rows.length, 1, width, rowHeight,
+							mxUtils.htmlEntities(item.name, false), startSize,
+							'shape=table;startSize=' + startSize + ';container=1;collapsible=0;childLayout=tableLayout;' +
+							'fixedHeader=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;',
+							null,
+							'shape=partialRectangle;html=1;whiteSpace=wrap;connectable=0;strokeColor=inherit;' +
+							'overflow=hidden;fillColor=none;top=0;left=0;bottom=0;right=0;pointerEvents=1;align=left;spacingLeft=8;');
+
+						graph.setTableValues(table, values);
+
+						var rows = graph.model.getChildCells(table, true);
+
+						for (var r = 0; r < rows.length; r++)
+						{
+							var cols = graph.model.getChildCells(rows[r], true);
+
+							if (cols.length > 0)
+							{
+								if (item.rows[r].type == 'comment')
+								{
+									cols[0].style = mxUtils.setStyle(cols[0].style, mxConstants.STYLE_FONTCOLOR, '#008a00');
+									cols[0].style = mxUtils.setStyle(cols[0].style, mxConstants.STYLE_FILLCOLOR, '#f0fff0');
+								}
+								else if (item.rows[r].type == 'macro')
+								{
+									cols[0].style = mxUtils.setStyle(cols[0].style, mxConstants.STYLE_FONTCOLOR, '#0050ef');
+									cols[0].style = mxUtils.setStyle(cols[0].style, mxConstants.STYLE_FILLCOLOR, '#eef5ff');
+								}
+							}
+						}
+
+						if (x == null || y == null)
+						{
+							var pt = (evt != null && !mxEvent.isControlDown(evt) &&
+								!mxEvent.isMetaDown(evt) && graph.isMouseInsertPoint()) ?
+								graph.getInsertPoint() :
+								graph.getCenterInsertPoint(graph.getBoundingBoxFromGeometry([table], true));
+							x = pt.x;
+							y = pt.y;
+						}
+
+						table.geometry.x = x + i * (width + 40);
+						table.geometry.y = y;
+						cells.push(graph.addCell(table));
+					}
+
+					graph.fireEvent(new mxEventObject('cellsInserted', 'cells', cells));
+				}
+				finally
+				{
+					graph.getModel().endUpdate();
+				}
+
+				graph.setSelectionCells(cells);
+				graph.scrollCellToVisible(cells[0]);
+				graph.container.focus();
+			}, mxResources.get('insert', null, 'Insert'));
+
+			editorUi.showDialog(dlg.container, 640, 420, true, true,
+				null, null, null, new mxRectangle(0, 0, 440, 280));
+			dlg.init();
+		}, null, null, Editor.ctrlKey + '+' + Editor.shiftKey + '+C')).isEnabled = isGraphEnabled;
+
         this.put('insertAdvanced', new Menu(mxUtils.bind(this, function(menu, parent)
         {
-			var insertMenuItems = ['fromText', 'plantUml', 'formatSql', 'csv'];
+			var insertMenuItems = ['fromText', 'fromCodeStruct', 'plantUml', 'formatSql', 'csv'];
 
 			if (!EditorUi.enablePlantUml)
 			{
-				insertMenuItems.splice(1, 1);
+				insertMenuItems.splice(2, 1);
 			}
 
 			this.addMenuItems(menu, insertMenuItems, parent);

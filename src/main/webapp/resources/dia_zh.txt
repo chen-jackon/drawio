@@ -385,6 +385,7 @@ forum=讨论组 / 帮助论坛
 freehand=自由绘图
 fromTemplate=从模板
 fromTemplateUrl=从模板 URL 地址
+fromCodeStruct=从代码结构体
 fromText=从文本
 fromUrl=从 URL 地址
 fromThisPage=从当前页

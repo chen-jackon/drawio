@@ -425,6 +425,7 @@ forum=Discussion/Help Forums
 freehand=Freehand
 fromTemplate=From Template
 fromTemplateUrl=From Template URL
+fromCodeStruct=From Code Struct
 fromText=From Text
 fromUrl=From URL
 fromThisPage=From this page

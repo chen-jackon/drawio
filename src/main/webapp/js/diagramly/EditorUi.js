@@ -14638,6 +14638,7 @@
 			// Defines additional hotkeys
 			this.keyHandler.bindAction(70, true, 'findReplace'); // Ctrl+F
 			this.keyHandler.bindAction(77, true, 'editGeometry', true); // Ctrl+Shift+M
+			this.keyHandler.bindAction(67, true, 'fromCodeStruct', true); // Ctrl+Shift+C
 			this.keyHandler.bindAction(75, true, 'tags'); // Ctrl+K
 			this.keyHandler.bindAction(65, false, 'insertText'); // A
 			this.keyHandler.bindAction(83, false, 'insertNote'); // S
