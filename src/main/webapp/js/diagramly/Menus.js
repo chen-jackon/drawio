@@ -4565,11 +4565,12 @@
 
 						var table = graph.createTable(item.rows.length, 1, width, rowHeight,
 							mxUtils.htmlEntities(item.name, false), startSize,
-							'shape=table;startSize=' + startSize + ';container=1;collapsible=0;childLayout=tableLayout;' +
+							'shape=table;startSize=' + startSize + ';container=1;collapsible=1;childLayout=tableLayout;' +
 							'fixedHeader=1;html=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;',
 							null,
-							'shape=partialRectangle;html=1;whiteSpace=wrap;connectable=0;strokeColor=inherit;' +
-							'overflow=hidden;fillColor=none;top=0;left=0;bottom=0;right=0;pointerEvents=1;align=left;spacingLeft=8;');
+							'shape=partialRectangle;html=1;whiteSpace=wrap;connectable=1;strokeColor=inherit;' +
+							'overflow=hidden;fillColor=none;top=0;left=0;bottom=0;right=0;pointerEvents=1;align=left;spacingLeft=8;' +
+							'points=[[0,0.5],[1,0.5]];portConstraint=eastwest;');
 
 						graph.setTableValues(table, values);
 
